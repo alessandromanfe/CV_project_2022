@@ -1,115 +1,88 @@
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/highgui/highgui.hpp"
+
 #include <iostream>
-#include<vector>
-using namespace std;
+
 using namespace cv;
+using namespace std;
 
-Mat src_img;
-Mat img;
-cv::Rect rect(0,0,0,0);
-cv::Point p1(0,0);
-cv::Point p2(0,0);
-//using mouse
-static bool clicked = false;
-//create a function to fix boundries
-void fix_boundries()
-{
-	if(rect.width >img.cols -rect.x)
-	rect.width = img.cols - rect.x;
-	if(rect.height > img.rows -rect.y)
-	rect.height = img.rows -rect.y;
-	if(rect.x < 0)
-	rect.x = 0;
-	if(rect.y < 0)
-	rect.y = 0;
-}
+Vec3b RandomColor(int value);  //Generate random color function
 
-//create a function to draw a rectangle
-void draw()
+int main(int argc, char* argv[])
 {
-	img = src_img.clone();
-	fix_boundries();
-	cv::rectangle(img, rect, cv::Scalar(0,255,0),1,8,0);
-	cv::imshow("Original image", img);
-}
+	Mat image = imread("2.jpg");    //Load RGB color image
+	imshow("Source Image", image);
 
-//create a function to control the area of drawn rectangle using mouse
-void onMouse(int event, int x, int y, int flag, void* user_data)
-{
-	switch(event)
+	//Grayscale, filtering, Canny edge detection
+	Mat imageGray;
+	cvtColor(image, imageGray, COLOR_BGR2GRAY);//Gray conversion
+	GaussianBlur(imageGray, imageGray, Size(5, 5), 2);   //Gaussian filtering
+	imshow("Gray Image", imageGray);
+	Canny(imageGray, imageGray, 80, 150);
+	imshow("Canny Image", imageGray);
+
+	//Find profile
+	vector<vector<Point>> contours;
+	vector<Vec4i> hierarchy;
+	findContours(imageGray, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point());
+	Mat imageContours = Mat::zeros(image.size(), CV_8UC1);  //outline	
+	Mat marks(image.size(), CV_32S);   //Opencv watershed second matrix parameter
+	marks = Scalar::all(0);
+	int index = 0;
+	int compCount = 0;
+	for (; index >= 0; index = hierarchy[index][0], compCount++)
 	{
-		case EVENT_LBUTTONDOWN:
-			clicked = true;
-			p1.x = x;
-			p1.y = y;
-			p2.x = x;
-			p2.y = y;
-			break;
-		case EVENT_LBUTTONUP:
-			clicked = false;
-			p2.x = x;
-			p2.y = y;
-			break;
-		case EVENT_MOUSEMOVE:
-			if(clicked)
+		//Mark marks and number the contours of different areas, which is equivalent to setting water injection points. There are as many water injection points as there are contours
+		drawContours(marks, contours, index, Scalar::all(compCount + 1), 1, 8, hierarchy);
+		drawContours(imageContours, contours, index, Scalar(255), 1, 8, hierarchy);
+	}
+
+	//Let's look at what's in the incoming matrix marks
+	Mat marksShows;
+	convertScaleAbs(marks, marksShows);
+	imshow("marksShow", marksShows);
+	imshow("outline", imageContours);
+	watershed(image, marks);
+
+	//Let's take a look at what is in the matrix marks after the watershed algorithm
+	Mat afterWatershed;
+	convertScaleAbs(marks, afterWatershed);
+	imshow("After Watershed", afterWatershed);
+
+	//Color fill each area
+	Mat PerspectiveImage = Mat::zeros(image.size(), CV_8UC3);
+	for (int i = 0; i < marks.rows; i++)
+	{
+		for (int j = 0; j < marks.cols; j++)
+		{
+			int index = marks.at<int>(i, j);
+			if (marks.at<int>(i, j) == -1)
 			{
-				p2.x = x;
-				p2.y = y;
+				PerspectiveImage.at<Vec3b>(i, j) = Vec3b(255, 255, 255);
 			}
-			break;
-		default:
-			break;
-			
-			
+			else
+			{
+				PerspectiveImage.at<Vec3b>(i, j) = RandomColor(index);
+			}
+		}
 	}
-	if(p1.x > p2.x)
-	{
-		rect.x = p2.x;
-		rect.width = p1.x - p2.x;
-	}
-	else
-	{
-		rect.x = p1.x;
-		rect.width = p2.x - p1.x;
-	}
-	if(p1.y > p2.y)
-	{
-		rect.y = p2.y;
-		rect.height = p1.y - p2.y;
-	}
-	else
-	{
-		rect.y = p1.y;
-		rect.height = p2.y - p1.y;
-	}
-	draw();
+	imshow("After ColorFill", PerspectiveImage);
+
+	//The result of segmentation and color filling is fused with the original image
+	Mat wshed;
+	addWeighted(image, 0.4, PerspectiveImage, 0.6, 0, wshed);
+	imshow("AddWeighted Image", wshed);
+
+	waitKey();
 }
-int main(int argc, char *argv[])
+
+Vec3b RandomColor(int value)//Generate random color function</span>
 {
-    
-    src_img= imread(argv[1]);
-	namedWindow("Original image", WINDOW_NORMAL);
-    setMouseCallback("Original image", onMouse, NULL);
-    imshow("Original image", src_img);
-    Mat result;
-    Mat bgModel, fgModel;
-    while(1){
-        char c=waitKey(0);
-        grabCut(src_img,result,rect,bgModel,fgModel,5,GC_INIT_WITH_RECT);
-        compare(result,GC_PR_FGD,result,CMP_EQ);
-        Mat foreground(src_img.size(),CV_8UC3,Scalar(255,255,255));
-        src_img.copyTo(foreground,result);
-        namedWindow("segmented img");
-        imshow("segmented img",foreground);
-        (char) waitKey(0);
-        
-    }
-      
-    return 0;
+	value = value % 255;  //Generate random numbers from 0 to 255
+	RNG rng;
+	int aa = rng.uniform(0, value);
+	int bb = rng.uniform(0, value);
+	int cc = rng.uniform(0, value);
+	return Vec3b(aa, bb, cc);
 }
-
-
 
