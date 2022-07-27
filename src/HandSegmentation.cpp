@@ -1,5 +1,5 @@
-#include "opencv2/imgproc.hpp"
-#include "opencv2/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/highgui/highgui.hpp"
 
 #include <iostream>
 
@@ -10,16 +10,13 @@ Vec3b RandomColor(int value);  //Generate random color function
 
 int main(int argc, char* argv[])
 {
-	Mat image = imread("2.jpg");    //Load RGB color image
-	imshow("Source Image", image);
+	Mat image = imread("rgb/02.jpg");    //Load RGB color image
 
 	//Grayscale, filtering, Canny edge detection
 	Mat imageGray;
 	cvtColor(image, imageGray, COLOR_BGR2GRAY);//Gray conversion
 	GaussianBlur(imageGray, imageGray, Size(5, 5), 2);   //Gaussian filtering
-	imshow("Gray Image", imageGray);
-	Canny(imageGray, imageGray, 80, 150);
-	imshow("Canny Image", imageGray);
+	Canny(imageGray, imageGray, 60, 240);
 
 	//Find profile
 	vector<vector<Point>> contours;
@@ -85,4 +82,3 @@ Vec3b RandomColor(int value)//Generate random color function</span>
 	int cc = rng.uniform(0, value);
 	return Vec3b(aa, bb, cc);
 }
-
