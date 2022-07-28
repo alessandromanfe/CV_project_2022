@@ -1,84 +1,78 @@
-#include "opencv2/imgproc/imgproc.hpp"
-#include "opencv2/highgui/highgui.hpp"
 
+#include <opencv2/core/utility.hpp>
+#include "opencv2/imgproc.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/highgui.hpp"
+#include <cstdio>
+#include <fstream>
 #include <iostream>
-
 using namespace cv;
 using namespace std;
 
-Vec3b RandomColor(int value);  //Generate random color function
-
-int main(int argc, char* argv[])
+Mat markerMask, img;
+Point prevPt(-1, -1);
+int main(int argc, char** argv)
 {
-	Mat image = imread("rgb/02.jpg");    //Load RGB color image
+    Mat img0 = imread("rgb/04.jpg", 1), imgGray;
+    ifstream in = ifstream("det/04.txt");
+    vector<Rect> real;
+    int x, y, widht, heigth;
+    while (in >> x >> y >> widht >> heigth)
+        real.push_back(Rect(x, y, widht, heigth));
+    img0.copyTo(img);
+    cvtColor(img, markerMask, COLOR_BGR2GRAY);
+    cvtColor(markerMask, imgGray, COLOR_GRAY2BGR);
+    Mat watersheddred(img.size(), CV_8UC3);
+    for (int z = 0; z < real.size(); z++)
+    {
+        
+        markerMask = Scalar::all(0);
+        rectangle(markerMask, real[z], Scalar::all(255), 4, 8, 0);
+        float ratio = 0.4;
+        float centerx = real[z].x + (real[z].width / 2);
+        float centery = real[z].y + (real[z].height / 2);
+        //drawMarker(markerMask, Point(real[0].x + real[0].width / 2, real[0].y + real[0].height / 2), Scalar::all(255),0, 3, 8);
 
-	//Grayscale, filtering, Canny edge detection
-	Mat imageGray;
-	cvtColor(image, imageGray, COLOR_BGR2GRAY);//Gray conversion
-	GaussianBlur(imageGray, imageGray, Size(5, 5), 2);   //Gaussian filtering
-	Canny(imageGray, imageGray, 60, 240);
+        line(markerMask, Point(centerx + ratio * real[z].width, centery), Point(centerx - ratio * real[z].width, centery), Scalar::all(255), 4, 8, 0);
+        line(markerMask, Point(centerx, centery + ratio * real[z].height), Point(centerx, centery - ratio * real[z].height), Scalar::all(255), 4, 8, 0);
 
-	//Find profile
-	vector<vector<Point>> contours;
-	vector<Vec4i> hierarchy;
-	findContours(imageGray, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point());
-	Mat imageContours = Mat::zeros(image.size(), CV_8UC1);  //outline	
-	Mat marks(image.size(), CV_32S);   //Opencv watershed second matrix parameter
-	marks = Scalar::all(0);
-	int index = 0;
-	int compCount = 0;
-	for (; index >= 0; index = hierarchy[index][0], compCount++)
-	{
-		//Mark marks and number the contours of different areas, which is equivalent to setting water injection points. There are as many water injection points as there are contours
-		drawContours(marks, contours, index, Scalar::all(compCount + 1), 1, 8, hierarchy);
-		drawContours(imageContours, contours, index, Scalar(255), 1, 8, hierarchy);
-	}
+        int i, j, compCount = 0;
+        vector<vector<Point> > contours;
+        vector<Vec4i> hierarchy;
+        findContours(markerMask, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+        Mat markers(markerMask.size(), CV_32S);
+        markers = Scalar::all(0);
+        int idx = 0;
+        for (; idx >= 0; idx = hierarchy[idx][0], compCount++)
+            drawContours(markers, contours, idx, Scalar::all(compCount + 1), -1, 8, hierarchy, INT_MAX);
 
-	//Let's look at what's in the incoming matrix marks
-	Mat marksShows;
-	convertScaleAbs(marks, marksShows);
-	imshow("marksShow", marksShows);
-	imshow("outline", imageContours);
-	watershed(image, marks);
-
-	//Let's take a look at what is in the matrix marks after the watershed algorithm
-	Mat afterWatershed;
-	convertScaleAbs(marks, afterWatershed);
-	imshow("After Watershed", afterWatershed);
-
-	//Color fill each area
-	Mat PerspectiveImage = Mat::zeros(image.size(), CV_8UC3);
-	for (int i = 0; i < marks.rows; i++)
-	{
-		for (int j = 0; j < marks.cols; j++)
-		{
-			int index = marks.at<int>(i, j);
-			if (marks.at<int>(i, j) == -1)
-			{
-				PerspectiveImage.at<Vec3b>(i, j) = Vec3b(255, 255, 255);
-			}
-			else
-			{
-				PerspectiveImage.at<Vec3b>(i, j) = RandomColor(index);
-			}
-		}
-	}
-	imshow("After ColorFill", PerspectiveImage);
-
-	//The result of segmentation and color filling is fused with the original image
-	Mat wshed;
-	addWeighted(image, 0.4, PerspectiveImage, 0.6, 0, wshed);
-	imshow("AddWeighted Image", wshed);
-
-	waitKey();
-}
-
-Vec3b RandomColor(int value)//Generate random color function</span>
-{
-	value = value % 255;  //Generate random numbers from 0 to 255
-	RNG rng;
-	int aa = rng.uniform(0, value);
-	int bb = rng.uniform(0, value);
-	int cc = rng.uniform(0, value);
-	return Vec3b(aa, bb, cc);
+        vector<Vec3b> colorTab;
+        for (i = 0; i < compCount; i++)
+        {
+            int b = theRNG().uniform(0, 255);
+            int g = theRNG().uniform(0, 255);
+            int r = theRNG().uniform(0, 255);
+            colorTab.push_back(Vec3b((uchar)b, (uchar)g, (uchar)r));
+        }
+        watershed(img0, markers);
+        Mat wshed(markers.size(), CV_8UC3);
+        // paint the watershed image
+        for (i = 0; i < markers.rows; i++)
+            for (j = 0; j < markers.cols; j++)
+            {
+                int index = markers.at<int>(i, j);
+                if (index == -1)
+                    wshed.at<Vec3b>(i, j) = Vec3b(255, 255, 255);
+                else if (index <= 0 || index > compCount)
+                    wshed.at<Vec3b>(i, j) = Vec3b(0, 0, 0);
+                else
+                    wshed.at<Vec3b>(i, j) = colorTab[index - 1];
+            }
+        wshed(real[z]).copyTo(watersheddred(real[z]));
+    }
+    watersheddred = watersheddred * 0.5 + imgGray * 0.5;
+    imshow("watershed transform", watersheddred);
+        
+            waitKey(0);
+    return 0;
 }
